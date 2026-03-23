@@ -11,8 +11,7 @@ const nodemailer = require('nodemailer');
 const app = express();
 const PORT = 3000;
 
-app.use(cors()); 
-app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use(cors({ origin: 'https://bookwanderer-frontend.vercel.app' }));app.use('/assets', express.static(path.join(__dirname, 'assets')));
 app.use(bodyParser.json({ limit: '10mb' })); 
 
 const dbPath = path.join(__dirname, 'library.db'); 
@@ -195,31 +194,28 @@ app.post('/books', (req, res) => {
 // --- AUTH & OTP ROUTES ---
 app.post('/send-otp', (req, res) => {
     const { email } = req.body;
-    db.get("SELECT email FROM users WHERE email = ?", [email], (err, row) => {
-        if (err) return res.status(500).json({ error: "Database error" });
-        if (row) return res.status(400).json({ error: "This email is already registered. Please sign in." });
+    
+    // We remove the "if (row) return error" check so that 
+    // registered users can actually receive a reset code.
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 600000; // 10 mins
 
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const expiresAt = Date.now() + 5 * 60 * 1000; 
-
-        db.run("DELETE FROM otp_verifications WHERE email = ?", [email], () => {
-            db.run("INSERT INTO otp_verifications (email, otp, expires_at) VALUES (?, ?, ?)", [email, otp, expiresAt], (err) => {
-                if (err) return res.status(500).json({ error: "Failed to save OTP" });
-                const mailOptions = {
-                    from: 'book.wanderer13@gmail.com', 
-                    to: email,
-                    subject: 'Your BookWanderer Access Seal',
-                    text: `Welcome to the Imperial Archive! Your 6-digit verification seal is: ${otp}. This seal will fade in 5 minutes.`
-                };
-                transporter.sendMail(mailOptions, (error) => {
-                    if (error) return res.status(500).json({ error: "Failed to send email." });
-                    res.status(200).json({ message: "OTP sent successfully!" });
-                });
+    db.run("DELETE FROM otp_verifications WHERE email = ?", [email], () => {
+        db.run("INSERT INTO otp_verifications (email, otp, expires_at) VALUES (?, ?, ?)", [email, otp, expiresAt], (err) => {
+            if (err) return res.status(500).json({ error: "Failed to save seal" });
+            const mailOptions = {
+                from: 'book.wanderer13@gmail.com',
+                to: email,
+                subject: 'Archive Access Recovery Code',
+                text: `Your recovery code is: ${otp}. It expires in 10 minutes.`
+            };
+            transporter.sendMail(mailOptions, (error) => {
+                if (error) return res.status(500).json({ error: "Failed to send email." });
+                res.status(200).json({ message: "OTP sent successfully!" });
             });
         });
     });
 });
-
 app.post('/verify-otp', (req, res) => {
     const { email, otp } = req.body;
     const currentTime = Date.now();
@@ -281,6 +277,24 @@ app.post('/login', (req, res) => {
         } else {
             res.status(401).json({ message: "Invalid Credentials" });
         }
+    });
+});
+app.post('/reset-password', async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    const now = Date.now();
+
+    db.get(`SELECT * FROM otp_verifications WHERE email = ? AND otp = ? AND expires_at > ?`, 
+    [email, otp, now], async (err, row) => {
+        if (err || !row) return res.status(400).json({ error: "Invalid or expired code." });
+
+        try {
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            db.run(`UPDATE users SET password = ? WHERE email = ?`, [hashedPassword, email], (err) => {
+                if (err) return res.status(500).json({ error: "Failed to update." });
+                db.run(`DELETE FROM otp_verifications WHERE email = ?`, [email]);
+                res.json({ message: "Password updated successfully!" });
+            });
+        } catch (e) { res.status(500).json({ error: "Encryption error" }); }
     });
 });
 // --- FORGOT PASSWORD: SEND OTP ---
