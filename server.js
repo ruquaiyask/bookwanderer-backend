@@ -283,7 +283,35 @@ app.post('/login', (req, res) => {
         }
     });
 });
+// --- PASSWORD RECOVERY ROUTE ---
+app.post('/reset-password', async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    const now = Date.now();
 
+    // 1. Verify if the OTP is correct and hasn't expired
+    db.get(`SELECT * FROM otp_verifications WHERE email = ? AND otp = ? AND expires_at > ?`, 
+    [email, otp, now], async (err, row) => {
+        if (err || !row) {
+            return res.status(400).json({ error: "Invalid or expired verification code." });
+        }
+
+        try {
+            // 2. Hash the new password securely
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            
+            // 3. Update the user's password in the database
+            db.run(`UPDATE users SET password = ? WHERE email = ?`, [hashedPassword, email], (updateErr) => {
+                if (updateErr) return res.status(500).json({ error: "Archive update failed." });
+                
+                // 4. Delete the used OTP so it can't be used again
+                db.run(`DELETE FROM otp_verifications WHERE email = ?`, [email]);
+                res.json({ message: "Credentials updated successfully!" });
+            });
+        } catch (e) { 
+            res.status(500).json({ error: "Encryption error." }); 
+        }
+    });
+});
 // --- THE SECURITY GUARD MIDDLEWARE ---
 function authenticateToken(req, res, next) {
     // Look for the wristband in the request headers
