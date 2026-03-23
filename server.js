@@ -283,33 +283,53 @@ app.post('/login', (req, res) => {
         }
     });
 });
-// --- PASSWORD RECOVERY ROUTE ---
+// --- FORGOT PASSWORD: SEND OTP ---
+app.post('/send-otp', (req, res) => {
+    const { email } = req.body;
+    
+    // Check if user exists first
+    db.get(`SELECT * FROM users WHERE email = ?`, [email], (err, user) => {
+        if (!user) return res.status(404).json({ error: "Email not found in Archives." });
+
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const expiresAt = Date.now() + 600000; // 10 mins
+
+        db.run(`REPLACE INTO otp_verifications (email, otp, expires_at) VALUES (?, ?, ?)`, 
+        [email, otp, expiresAt], (err) => {
+            if (err) return res.status(500).json({ error: "Database error" });
+
+            const mailOptions = {
+                from: 'book.wanderer13@gmail.com',
+                to: email,
+                subject: 'Archive Access Recovery Code',
+                text: `Your recovery code is: ${otp}. It expires in 10 minutes.`
+            };
+
+            transporter.sendMail(mailOptions, (error) => {
+                if (error) return res.status(500).json({ error: "Mail delivery failed" });
+                res.json({ message: "OTP Sent" });
+            });
+        });
+    });
+});
+
+// --- FORGOT PASSWORD: RESET LOGIC ---
 app.post('/reset-password', async (req, res) => {
     const { email, otp, newPassword } = req.body;
     const now = Date.now();
 
-    // 1. Verify if the OTP is correct and hasn't expired
     db.get(`SELECT * FROM otp_verifications WHERE email = ? AND otp = ? AND expires_at > ?`, 
     [email, otp, now], async (err, row) => {
-        if (err || !row) {
-            return res.status(400).json({ error: "Invalid or expired verification code." });
-        }
+        if (err || !row) return res.status(400).json({ error: "Invalid or expired code." });
 
         try {
-            // 2. Hash the new password securely
             const hashedPassword = await bcrypt.hash(newPassword, 10);
-            
-            // 3. Update the user's password in the database
-            db.run(`UPDATE users SET password = ? WHERE email = ?`, [hashedPassword, email], (updateErr) => {
-                if (updateErr) return res.status(500).json({ error: "Archive update failed." });
-                
-                // 4. Delete the used OTP so it can't be used again
+            db.run(`UPDATE users SET password = ? WHERE email = ?`, [hashedPassword, email], (err) => {
+                if (err) return res.status(500).json({ error: "Failed to update." });
                 db.run(`DELETE FROM otp_verifications WHERE email = ?`, [email]);
-                res.json({ message: "Credentials updated successfully!" });
+                res.json({ message: "Password updated!" });
             });
-        } catch (e) { 
-            res.status(500).json({ error: "Encryption error." }); 
-        }
+        } catch (e) { res.status(500).json({ error: "Encryption error" }); }
     });
 });
 // --- THE SECURITY GUARD MIDDLEWARE ---
