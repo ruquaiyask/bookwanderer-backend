@@ -9,9 +9,8 @@ const path = require('path');
 const nodemailer = require('nodemailer'); 
 
 const app = express();
-const PORT = 3000;
-
-app.use(cors({ origin: 'https://bookwanderer-frontend.vercel.app' }));app.use('/assets', express.static(path.join(__dirname, 'assets')));
+const PORT = process.env.PORT || 3000;
+app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' })); 
 
 const dbPath = path.join(__dirname, 'library.db'); 
