@@ -10,7 +10,10 @@ const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 app.use(cors());
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.json({ limit: '10mb' })); 
 
 const dbPath = path.join(__dirname, 'library.db'); 
