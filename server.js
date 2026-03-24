@@ -21,10 +21,16 @@ const db = new sqlite3.Database(dbPath, (err) => {
 });
 
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // This uses SSL, which Render prefers over Port 587
     auth: {
         user: 'book.wanderer13@gmail.com',        
-        pass: process.env.EMAIL_PASSWORD // Replaced the hardcoded string!
+        pass: process.env.EMAIL_PASSWORD 
+    },
+    tls: {
+        // This ensures the cloud network doesn't block the handshake
+        rejectUnauthorized: false 
     }
 });
 // --- DATABASE INITIALIZATION ---
